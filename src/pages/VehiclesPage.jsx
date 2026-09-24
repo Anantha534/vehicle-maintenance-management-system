@@ -37,13 +37,32 @@ export default function VehiclesPage({ vehicles, onAddVehicle, maintenanceLogs, 
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
-    if (!formData.regNo || !formData.make || !formData.model) return;
+    const reg = formData.regNo || formData.registrationNumber;
+    if (!reg || !formData.make || !formData.model) return;
+
+    const count = vehicles.length + 1;
+    const vId = 'VEH-' + String(count).padStart(3, '0');
+    const numYear = Number(formData.year || formData.manufacturingYear) || new Date().getFullYear();
+    const numMileage = Number(formData.mileage || formData.currentMileage) || 0;
 
     onAddVehicle({
       ...formData,
-      id: 'v_' + Date.now(),
-      mileage: Number(formData.mileage) || 0,
-      year: Number(formData.year) || new Date().getFullYear()
+      vehicleId: vId,
+      registrationNumber: reg,
+      make: formData.make,
+      model: formData.model,
+      manufacturingYear: numYear,
+      fuelType: formData.fuelType || 'Petrol',
+      currentMileage: numMileage,
+      status: formData.status || 'Active',
+      nextServiceDate: formData.nextServiceDate || '',
+      purchaseDate: formData.purchaseDate || '',
+      insuranceExpiry: formData.insuranceExpiry || '',
+      type: formData.type || 'Car',
+      id: vId,
+      regNo: reg,
+      year: numYear,
+      mileage: numMileage
     });
 
     setIsAddModalOpen(false);
@@ -64,8 +83,9 @@ export default function VehiclesPage({ vehicles, onAddVehicle, maintenanceLogs, 
 
   // Filtered vehicles logic
   const filteredVehicles = vehicles.filter((v) => {
+    const reg = v.registrationNumber || v.regNo || '';
     const matchesSearch = 
-      v.regNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      reg.toLowerCase().includes(searchTerm.toLowerCase()) ||
       v.make.toLowerCase().includes(searchTerm.toLowerCase()) ||
       v.model.toLowerCase().includes(searchTerm.toLowerCase());
     
