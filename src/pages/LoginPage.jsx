@@ -4,10 +4,32 @@ import { Car, Lock, User, ArrowRight, ShieldCheck } from 'lucide-react';
 export default function LoginPage({ onLogin }) {
   const [username, setUsername] = useState('admin@fleet.edu');
   const [password, setPassword] = useState('demo123');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onLogin();
+    setError('');
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+
+      onLogin(data.user, data.token);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -36,6 +58,12 @@ export default function LoginPage({ onLogin }) {
               Demo Mode Active: Click <span className="font-bold text-forest-900">"Sign In to Fleet Portal"</span> to access the management portal.
             </p>
           </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs font-semibold">
+              {error}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

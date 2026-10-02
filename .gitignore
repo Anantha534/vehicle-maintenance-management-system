@@ -5,3 +5,7 @@ dist-isolation
 *.log
 .env
 .env.local
+server/pgdata
+server/prisma/*.db
+server/prisma/*.db-journal
+.vehicle_pgdata

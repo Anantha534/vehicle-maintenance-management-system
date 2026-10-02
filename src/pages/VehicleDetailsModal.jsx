@@ -1,9 +1,12 @@
 import React from 'react';
 import Modal from '../components/Modal';
-import { Car, Calendar, Gauge, ShieldAlert, Wrench, Package, DollarSign } from 'lucide-react';
+import { getServiceScheduleInfo } from '../utils/serviceScheduler';
+import { Car, Calendar, Gauge, ShieldAlert, Wrench, Package, DollarSign, AlertTriangle } from 'lucide-react';
 
 export default function VehicleDetailsModal({ vehicle, isOpen, onClose, maintenanceLogs = [], spareParts = [] }) {
   if (!vehicle) return null;
+
+  const schedule = getServiceScheduleInfo(vehicle);
 
   // Filter maintenance history & spare parts for this specific vehicle
   const vehicleLogs = maintenanceLogs.filter(m => m.vehicleReg === vehicle.regNo);
@@ -38,15 +41,35 @@ export default function VehicleDetailsModal({ vehicle, isOpen, onClose, maintena
           <div className="text-right">
             <p className="text-[10px] text-forest-300 font-semibold uppercase tracking-wider">Current Status</p>
             <div className="mt-1">
-              {vehicle.status === 'Active' && <span className="badge-active">Active</span>}
-              {vehicle.status === 'Service Due' && <span className="badge-warning">Service Due</span>}
-              {vehicle.status === 'Under Repair' && <span className="badge-danger">Under Repair</span>}
+              <span className={schedule.badgeClass}>
+                {schedule.displayStatus}
+              </span>
             </div>
             <p className="text-[11px] text-forest-300 mt-2 font-medium">
-              Next Service: <span className="text-white font-semibold">{vehicle.nextServiceDate}</span>
+              Next Service: <span className="text-white font-semibold">{vehicle.nextServiceDate || 'Not Scheduled'}</span>
+              {schedule.serviceState === 'Overdue' && (
+                <span className="block text-[10px] text-red-300 font-bold">
+                  Overdue by {Math.abs(schedule.daysDiff)} day(s)
+                </span>
+              )}
+              {schedule.serviceState === 'Due' && (
+                <span className="block text-[10px] text-amber-300 font-bold">
+                  Due in {schedule.daysDiff} day(s)
+                </span>
+              )}
             </p>
           </div>
         </div>
+
+        {/* Priority Status Alert if Under Repair */}
+        {schedule.isUnderRepair && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-3 text-xs text-red-800">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>
+              <strong>High Priority Operational State:</strong> Vehicle is currently Under Repair with active service or maintenance in progress.
+            </span>
+          </div>
+        )}
 
         {/* Metadata Details Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-gray-50 p-3.5 rounded-xl border border-gray-200 text-xs">
@@ -93,6 +116,9 @@ export default function VehicleDetailsModal({ vehicle, isOpen, onClose, maintena
                         <span className="text-gray-500 font-medium">{log.serviceDate}</span>
                         <span className="text-gray-400">&bull;</span>
                         <span className="text-gray-600 font-mono">{log.mileage} km</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${log.status === 'Completed' ? 'badge-active' : 'badge-danger'}`}>
+                          {log.status}
+                        </span>
                       </div>
                       <p className="text-gray-800 mt-1 font-medium">{log.description}</p>
                     </div>

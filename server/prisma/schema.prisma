@@ -1,0 +1,67 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("Admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Vehicle {
+  id              String           @id @default(uuid())
+  regNo           String           @unique
+  type            String
+  make            String
+  model           String
+  year            Int
+  fuelType        String
+  mileage         Int
+  status          String
+  nextServiceDate String?
+  purchaseDate    String?
+  insuranceExpiry String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  maintenanceLogs MaintenanceLog[]
+  spareParts      SparePart[]
+}
+
+model MaintenanceLog {
+  id              String   @id @default(uuid())
+  vehicleReg      String
+  vehicleName     String?
+  type            String
+  serviceDate     String
+  nextServiceDate String?
+  mileage         Int?
+  description     String
+  cost            Float
+  status          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleReg], references: [regNo], onDelete: Cascade, onUpdate: Cascade)
+}
+
+model SparePart {
+  id              String   @id @default(uuid())
+  partName        String
+  vehicleReg      String
+  quantity        Int
+  replacementDate String
+  cost            Float
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleReg], references: [regNo], onDelete: Cascade, onUpdate: Cascade)
+}

@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
 import Modal from '../components/Modal';
-import { Package, Plus, Search, DollarSign, Calendar } from 'lucide-react';
+import { Package, Plus, Search, DollarSign, Calendar, Edit2, Trash2, AlertTriangle } from 'lucide-react';
 
-export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
+export default function SparePartsPage({ 
+  spareParts = [], 
+  vehicles = [], 
+  onAddPart,
+  onUpdatePart,
+  onDeletePart
+}) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingPart, setEditingPart] = useState(null);
+  const [deletingPart, setDeletingPart] = useState(null);
 
   const [formData, setFormData] = useState({
     partName: '',
@@ -14,25 +22,49 @@ export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
     cost: ''
   });
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     if (!formData.partName || !formData.vehicleReg) return;
 
-    onAddPart({
+    const res = await onAddPart({
       ...formData,
-      id: 'p_' + Date.now(),
       quantity: Number(formData.quantity) || 1,
       cost: Number(formData.cost) || 0
     });
 
-    setIsAddModalOpen(false);
-    setFormData({
-      partName: '',
-      vehicleReg: vehicles.length > 0 ? vehicles[0].regNo : '',
-      quantity: 1,
-      replacementDate: new Date().toISOString().split('T')[0],
-      cost: ''
+    if (res?.success) {
+      setIsAddModalOpen(false);
+      setFormData({
+        partName: '',
+        vehicleReg: vehicles.length > 0 ? vehicles[0].regNo : '',
+        quantity: 1,
+        replacementDate: new Date().toISOString().split('T')[0],
+        cost: ''
+      });
+    }
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingPart) return;
+
+    const res = await onUpdatePart(editingPart.id, {
+      ...editingPart,
+      quantity: Number(editingPart.quantity) || 1,
+      cost: Number(editingPart.cost) || 0
     });
+
+    if (res?.success) {
+      setEditingPart(null);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingPart) return;
+    const res = await onDeletePart(deletingPart.id);
+    if (res?.success) {
+      setDeletingPart(null);
+    }
   };
 
   const filteredParts = spareParts.filter(p => 
@@ -89,23 +121,42 @@ export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
                 <th className="py-3 px-4">Quantity</th>
                 <th className="py-3 px-4">Replacement Date</th>
                 <th className="py-3 px-4">Cost</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredParts.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-8 text-center text-gray-500 italic text-xs">
+                  <td colSpan="6" className="py-8 text-center text-gray-500 italic text-xs">
                     No spare parts recorded.
                   </td>
                 </tr>
               ) : (
-                filteredParts.map((p) => (
-                  <tr key={p.id} className="hover:bg-cream-50/70 transition-colors">
-                    <td className="py-3 px-4 font-semibold text-gray-900">{p.partName}</td>
-                    <td className="py-3 px-4 font-mono text-gray-700 font-bold">{p.vehicleReg}</td>
-                    <td className="py-3 px-4 text-gray-600">{p.quantity} unit(s)</td>
-                    <td className="py-3 px-4 text-gray-700">{p.replacementDate}</td>
-                    <td className="py-3 px-4 font-bold text-forest-900">₹{Number(p.cost).toLocaleString('en-IN')}</td>
+                filteredParts.map((part) => (
+                  <tr key={part.id} className="hover:bg-cream-50/70 transition-colors">
+                    <td className="py-3 px-4 font-semibold text-gray-800">{part.partName}</td>
+                    <td className="py-3 px-4 font-mono font-bold text-gray-900">{part.vehicleReg}</td>
+                    <td className="py-3 px-4 text-gray-700 font-medium">{part.quantity} unit(s)</td>
+                    <td className="py-3 px-4 text-gray-600 font-medium">{part.replacementDate}</td>
+                    <td className="py-3 px-4 font-bold text-forest-900">₹{Number(part.cost).toLocaleString('en-IN')}</td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setEditingPart({ ...part })}
+                          title="Edit Spare Part"
+                          className="p-1.5 bg-gray-100 hover:bg-blue-600 hover:text-white text-gray-700 rounded text-[11px] font-semibold transition-colors border border-gray-300"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingPart(part)}
+                          title="Delete Spare Part"
+                          className="p-1.5 bg-gray-100 hover:bg-red-600 hover:text-white text-gray-700 rounded text-[11px] font-semibold transition-colors border border-gray-300"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -115,14 +166,14 @@ export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
       </div>
 
       {/* Modal: Add Spare Part */}
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add Spare Part Entry">
+      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add New Spare Part">
         <form onSubmit={handleFormSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Part Name *</label>
               <input
                 type="text"
-                placeholder="e.g. Front Brake Pads Set"
+                placeholder="e.g. Brake Pads Set / Clutch Cable / Battery"
                 value={formData.partName}
                 onChange={(e) => setFormData({ ...formData, partName: e.target.value })}
                 className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
@@ -131,13 +182,14 @@ export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Assigned Vehicle *</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Associated Vehicle *</label>
               <select
                 value={formData.vehicleReg}
                 onChange={(e) => setFormData({ ...formData, vehicleReg: e.target.value })}
                 className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600 bg-white font-mono"
                 required
               >
+                <option value="">-- Choose Vehicle --</option>
                 {vehicles.map((v) => (
                   <option key={v.id} value={v.regNo}>
                     {v.regNo} - {v.make} {v.model}
@@ -146,16 +198,30 @@ export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Quantity *</label>
-              <input
-                type="number"
-                min="1"
-                value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
-                required
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Quantity *</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Total Cost (₹) *</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 1500"
+                  value={formData.cost}
+                  onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
+                  required
+                />
+              </div>
             </div>
 
             <div>
@@ -164,18 +230,6 @@ export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
                 type="date"
                 value={formData.replacementDate}
                 onChange={(e) => setFormData({ ...formData, replacementDate: e.target.value })}
-                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Total Part Cost (₹) *</label>
-              <input
-                type="number"
-                placeholder="e.g. 2100"
-                value={formData.cost}
-                onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
                 className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
                 required
               />
@@ -199,6 +253,135 @@ export default function SparePartsPage({ spareParts, vehicles, onAddPart }) {
           </div>
         </form>
       </Modal>
+
+      {/* Modal: Edit Spare Part */}
+      {editingPart && (
+        <Modal isOpen={!!editingPart} onClose={() => setEditingPart(null)} title={`Edit Spare Part: ${editingPart.partName}`}>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Part Name *</label>
+                <input
+                  type="text"
+                  value={editingPart.partName}
+                  onChange={(e) => setEditingPart({ ...editingPart, partName: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Associated Vehicle *</label>
+                <select
+                  value={editingPart.vehicleReg}
+                  onChange={(e) => setEditingPart({ ...editingPart, vehicleReg: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600 bg-white font-mono"
+                  required
+                >
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.regNo}>
+                      {v.regNo} - {v.make} {v.model}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Quantity *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editingPart.quantity}
+                    onChange={(e) => setEditingPart({ ...editingPart, quantity: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Total Cost (₹) *</label>
+                  <input
+                    type="number"
+                    value={editingPart.cost}
+                    onChange={(e) => setEditingPart({ ...editingPart, cost: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Replacement Date *</label>
+                <input
+                  type="date"
+                  value={editingPart.replacementDate || ''}
+                  onChange={(e) => setEditingPart({ ...editingPart, replacementDate: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 flex justify-end gap-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setEditingPart(null)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-forest-900 hover:bg-forest-800 text-white rounded-lg text-xs font-semibold transition-colors"
+              >
+                Update Spare Part
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Modal: Delete Confirmation */}
+      {deletingPart && (
+        <Modal isOpen={!!deletingPart} onClose={() => setDeletingPart(null)} title="Confirm Spare Part Deletion">
+          <div className="space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-red-800">
+                <p className="font-bold">Are you sure you want to delete this spare part record?</p>
+                <p className="mt-1 text-red-700">
+                  This spare part entry for vehicle {deletingPart.vehicleReg} will be permanently removed from PostgreSQL.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs space-y-1">
+              <div><strong className="text-gray-700">Part:</strong> {deletingPart.partName}</div>
+              <div><strong className="text-gray-700">Vehicle:</strong> {deletingPart.vehicleReg}</div>
+              <div><strong className="text-gray-700">Cost:</strong> ₹{Number(deletingPart.cost).toLocaleString('en-IN')}</div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setDeletingPart(null)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Part</span>
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
