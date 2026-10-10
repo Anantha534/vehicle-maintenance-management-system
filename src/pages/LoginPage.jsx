@@ -19,14 +19,28 @@ export default function LoginPage({ onLogin }) {
         body: JSON.stringify({ username, password })
       });
 
-      const data = await res.json();
+      let data = null;
+      const text = await res.text();
+      if (text && text.trim()) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
+      }
+
       if (!res.ok) {
-        throw new Error(data.error || 'Login failed');
+        const errorMsg = data?.error || (text && text.length < 200 ? text : null) || `Login failed (HTTP ${res.status})`;
+        throw new Error(errorMsg);
+      }
+
+      if (!data || !data.token) {
+        throw new Error('Authentication succeeded but no session token was received');
       }
 
       onLogin(data.user, data.token);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'An unexpected error occurred during login');
     } finally {
       setLoading(false);
     }
@@ -52,11 +66,35 @@ export default function LoginPage({ onLogin }) {
 
         {/* Login Form Body */}
         <form onSubmit={handleSubmit} className="p-8 space-y-5">
-          <div className="bg-forest-50 border border-forest-200 rounded-lg p-3.5 text-xs text-forest-800 flex items-center gap-3">
-            <ShieldCheck className="w-4 h-4 text-forest-700 shrink-0" />
-            <p>
-              Demo Mode Active: Click <span className="font-bold text-forest-900">"Sign In to Fleet Portal"</span> to access the management portal.
-            </p>
+          <div className="bg-forest-50 border border-forest-200 rounded-lg p-3.5 text-xs text-forest-800 space-y-2">
+            <div className="flex items-center gap-2 font-semibold text-forest-900">
+              <ShieldCheck className="w-4 h-4 text-forest-700 shrink-0" />
+              <span>Role-Based Access Demo Accounts</span>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={() => { setUsername('admin@fleet.edu'); setPassword('demo123'); }}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-all ${
+                  username === 'admin@fleet.edu' 
+                    ? 'bg-forest-900 text-white border-forest-950 shadow-xs' 
+                    : 'bg-white text-forest-800 border-forest-300 hover:bg-forest-100'
+                }`}
+              >
+                Administrator (Full CRUD)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setUsername('user@fleet.edu'); setPassword('user123'); }}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-all ${
+                  username === 'user@fleet.edu' 
+                    ? 'bg-forest-900 text-white border-forest-950 shadow-xs' 
+                    : 'bg-white text-forest-800 border-forest-300 hover:bg-forest-100'
+                }`}
+              >
+                Standard User (Read-Only)
+              </button>
+            </div>
           </div>
 
           {error && (

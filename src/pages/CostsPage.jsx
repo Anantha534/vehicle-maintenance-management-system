@@ -1,7 +1,7 @@
 import React from 'react';
 import { TrendingUp, DollarSign, PieChart, Wrench, Package, Car } from 'lucide-react';
 
-export default function CostsPage({ vehicles, maintenance, spareParts }) {
+export default function CostsPage({ vehicles = [], maintenance = [], spareParts = [] }) {
   // Aggregate expenses
   const serviceCosts = maintenance
     .filter(m => m.type === 'Service')

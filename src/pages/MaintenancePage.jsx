@@ -7,7 +7,8 @@ export default function MaintenancePage({
   vehicles = [], 
   onAddMaintenance,
   onUpdateMaintenance,
-  onDeleteMaintenance
+  onDeleteMaintenance,
+  isAdmin = true
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
@@ -29,6 +30,10 @@ export default function MaintenancePage({
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert('Unauthorized: Administrator privileges required to log maintenance.');
+      return;
+    }
     if (!formData.vehicleReg || !formData.description) return;
 
     const matchedVehicle = vehicles.find(v => v.regNo === formData.vehicleReg);
@@ -58,6 +63,10 @@ export default function MaintenancePage({
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert('Unauthorized: Administrator privileges required to update maintenance logs.');
+      return;
+    }
     if (!editingLog) return;
 
     const res = await onUpdateMaintenance(editingLog.id, {
@@ -72,6 +81,10 @@ export default function MaintenancePage({
   };
 
   const handleDeleteConfirm = async () => {
+    if (!isAdmin) {
+      alert('Unauthorized: Administrator privileges required to delete maintenance logs.');
+      return;
+    }
     if (!deletingLog) return;
     const res = await onDeleteMaintenance(deletingLog.id);
     if (res?.success) {
@@ -116,13 +129,20 @@ export default function MaintenancePage({
           </select>
         </div>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="px-4 py-2 bg-forest-900 hover:bg-forest-800 text-cream-50 rounded-lg text-xs font-semibold transition-colors flex items-center gap-2 shadow-xs border border-forest-950"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Log Maintenance Event</span>
-        </button>
+        {isAdmin ? (
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="px-4 py-2 bg-forest-900 hover:bg-forest-800 text-cream-50 rounded-lg text-xs font-semibold transition-colors flex items-center gap-2 shadow-xs border border-forest-950"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Log Maintenance Event</span>
+          </button>
+        ) : (
+          <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-xs font-semibold flex items-center gap-1.5" title="Standard users have read-only permissions">
+            <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+            <span>Read-Only Access</span>
+          </div>
+        )}
       </div>
 
       {/* Maintenance Table */}
@@ -179,22 +199,26 @@ export default function MaintenancePage({
                       {log.description}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setEditingLog({ ...log })}
-                          title="Edit Maintenance Log"
-                          className="p-1.5 bg-gray-100 hover:bg-blue-600 hover:text-white text-gray-700 rounded text-[11px] font-semibold transition-colors border border-gray-300"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setDeletingLog(log)}
-                          title="Delete Maintenance Log"
-                          className="p-1.5 bg-gray-100 hover:bg-red-600 hover:text-white text-gray-700 rounded text-[11px] font-semibold transition-colors border border-gray-300"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {isAdmin ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setEditingLog({ ...log })}
+                            title="Edit Maintenance Log"
+                            className="p-1.5 bg-gray-100 hover:bg-blue-600 hover:text-white text-gray-700 rounded text-[11px] font-semibold transition-colors border border-gray-300"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setDeletingLog(log)}
+                            title="Delete Maintenance Log"
+                            className="p-1.5 bg-gray-100 hover:bg-red-600 hover:text-white text-gray-700 rounded text-[11px] font-semibold transition-colors border border-gray-300"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-gray-400 font-medium">View Only</span>
+                      )}
                     </td>
                   </tr>
                 ))

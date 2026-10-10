@@ -1,7 +1,7 @@
 import React from 'react';
 import { User, Bell, Wrench, ShieldCheck, AlertTriangle } from 'lucide-react';
 
-export default function Header({ activeTab, vehiclesCount, serviceDueCount }) {
+export default function Header({ activeTab, vehiclesCount, serviceDueCount, user, isAdmin }) {
   const titles = {
     dashboard: { title: 'Fleet Overview & Analytics', subtitle: 'Real-time vehicle status and upcoming service schedules' },
     vehicles: { title: 'Vehicle Fleet Directory', subtitle: 'Manage active cars, scooters, mileage, and service intervals' },
@@ -40,12 +40,18 @@ export default function Header({ activeTab, vehiclesCount, serviceDueCount }) {
         <div className="h-6 w-px bg-gray-200 mx-1"></div>
 
         <div className="flex items-center gap-2.5 pl-1">
-          <div className="w-8 h-8 rounded-full bg-forest-900 text-cream-50 flex items-center justify-center font-bold text-xs shadow-xs border border-forest-800">
-            PA
+          <div className={`w-8 h-8 rounded-full ${isAdmin ? 'bg-forest-900 border-forest-800' : 'bg-blue-800 border-blue-700'} text-cream-50 flex items-center justify-center font-bold text-xs shadow-xs border`}>
+            {user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : (isAdmin ? 'PA' : 'US')}
           </div>
           <div className="text-right">
-            <p className="text-xs font-semibold text-gray-900 leading-tight">Project Administrator</p>
-            <p className="text-[10px] text-gray-500">Fleet Operations</p>
+            <p className="text-xs font-semibold text-gray-900 leading-tight">
+              {user?.name || (isAdmin ? 'Project Administrator' : 'Staff User')}
+            </p>
+            <div className="flex items-center justify-end gap-1 mt-0.5">
+              <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold uppercase tracking-wider ${isAdmin ? 'bg-forest-100 text-forest-800 border border-forest-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}`}>
+                {user?.role?.toUpperCase() || (isAdmin ? 'ADMIN' : 'USER')}
+              </span>
+            </div>
           </div>
         </div>
       </div>

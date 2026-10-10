@@ -38,6 +38,16 @@ export default function App() {
     return res;
   }, [token]);
 
+// Helper to safely parse JSON without throwing on empty or malformed text
+async function safeJson(res) {
+  try {
+    const text = await res.text();
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
+}
+
   // Check stored token validity on initial mount
   useEffect(() => {
     const savedToken = localStorage.getItem('fleet_token');
@@ -45,11 +55,12 @@ export default function App() {
       fetch('/api/auth/me', {
         headers: { 'x-auth-token': savedToken }
       })
-        .then(res => {
-          if (res.ok) return res.json();
-          throw new Error('Session expired');
+        .then(async res => {
+          if (!res.ok) throw new Error('Session expired');
+          return safeJson(res);
         })
         .then(data => {
+          if (!data || !data.user) throw new Error('Invalid user payload');
           setUser(data.user);
           setToken(savedToken);
           setIsLoggedIn(true);
@@ -74,16 +85,16 @@ export default function App() {
       ]);
 
       if (vRes.ok) {
-        const vData = await vRes.json();
-        setVehicles(vData);
+        const vData = await safeJson(vRes);
+        if (Array.isArray(vData)) setVehicles(vData);
       }
       if (mRes.ok) {
-        const mData = await mRes.json();
-        setMaintenance(mData);
+        const mData = await safeJson(mRes);
+        if (Array.isArray(mData)) setMaintenance(mData);
       }
       if (pRes.ok) {
-        const pData = await pRes.json();
-        setSpareParts(pData);
+        const pData = await safeJson(pRes);
+        if (Array.isArray(pData)) setSpareParts(pData);
       }
     } catch (err) {
       console.error('Failed to fetch fleet data:', err);
@@ -127,11 +138,11 @@ export default function App() {
         body: JSON.stringify(newVehicle)
       });
       if (res.ok) {
-        const created = await res.json();
+        const created = await safeJson(res);
         setVehicles(prev => [created, ...prev]);
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to add vehicle');
         return { success: false, error: err.error };
       }
@@ -149,11 +160,11 @@ export default function App() {
         body: JSON.stringify(updatedVehicle)
       });
       if (res.ok) {
-        const updated = await res.json();
+        const updated = await safeJson(res);
         setVehicles(prev => prev.map(v => v.id === id ? updated : v));
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to update vehicle');
         return { success: false, error: err.error };
       }
@@ -170,7 +181,7 @@ export default function App() {
         method: 'DELETE'
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await safeJson(res);
         const deletedReg = data.deleted?.regNo;
         setVehicles(prev => prev.filter(v => v.id !== id));
         // Cascade delete in PostgreSQL removes related logs and spare parts
@@ -180,7 +191,7 @@ export default function App() {
         }
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to delete vehicle');
         return { success: false, error: err.error };
       }
@@ -199,17 +210,17 @@ export default function App() {
         body: JSON.stringify(newLog)
       });
       if (res.ok) {
-        const created = await res.json();
+        const created = await safeJson(res);
         setMaintenance(prev => [created, ...prev]);
         // Refresh vehicles to sync status and updated mileage
         const vRes = await fetchWithAuth('/api/vehicles');
         if (vRes.ok) {
-          const vData = await vRes.json();
-          setVehicles(vData);
+          const vData = await safeJson(vRes);
+          if (Array.isArray(vData)) setVehicles(vData);
         }
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to log maintenance');
         return { success: false, error: err.error };
       }
@@ -227,17 +238,17 @@ export default function App() {
         body: JSON.stringify(updatedLog)
       });
       if (res.ok) {
-        const updated = await res.json();
+        const updated = await safeJson(res);
         setMaintenance(prev => prev.map(m => m.id === id ? updated : m));
         // Refresh vehicles to sync status
         const vRes = await fetchWithAuth('/api/vehicles');
         if (vRes.ok) {
-          const vData = await vRes.json();
-          setVehicles(vData);
+          const vData = await safeJson(vRes);
+          if (Array.isArray(vData)) setVehicles(vData);
         }
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to update maintenance log');
         return { success: false, error: err.error };
       }
@@ -258,12 +269,12 @@ export default function App() {
         // Refresh vehicles to sync status
         const vRes = await fetchWithAuth('/api/vehicles');
         if (vRes.ok) {
-          const vData = await vRes.json();
-          setVehicles(vData);
+          const vData = await safeJson(vRes);
+          if (Array.isArray(vData)) setVehicles(vData);
         }
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to delete maintenance log');
         return { success: false, error: err.error };
       }
@@ -282,11 +293,11 @@ export default function App() {
         body: JSON.stringify(newPart)
       });
       if (res.ok) {
-        const created = await res.json();
+        const created = await safeJson(res);
         setSpareParts(prev => [created, ...prev]);
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to add spare part');
         return { success: false, error: err.error };
       }
@@ -304,11 +315,11 @@ export default function App() {
         body: JSON.stringify(updatedPart)
       });
       if (res.ok) {
-        const updated = await res.json();
+        const updated = await safeJson(res);
         setSpareParts(prev => prev.map(p => p.id === id ? updated : p));
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to update spare part');
         return { success: false, error: err.error };
       }
@@ -328,7 +339,7 @@ export default function App() {
         setSpareParts(prev => prev.filter(p => p.id !== id));
         return { success: true };
       } else {
-        const err = await res.json();
+        const err = await safeJson(res);
         alert(err.error || 'Failed to delete spare part');
         return { success: false, error: err.error };
       }
@@ -344,6 +355,7 @@ export default function App() {
   }
 
   const serviceDueCount = vehicles.filter(v => v.status === 'Service Due').length;
+  const isAdmin = user?.role?.toUpperCase() === 'ADMIN';
 
   return (
     <div className="min-h-screen bg-cream-100 flex font-sans">
@@ -360,6 +372,8 @@ export default function App() {
           activeTab={activeTab} 
           vehiclesCount={vehicles.length}
           serviceDueCount={serviceDueCount}
+          user={user}
+          isAdmin={isAdmin}
         />
 
         <main className="px-8 py-6 w-full flex-1 space-y-6">
@@ -386,6 +400,7 @@ export default function App() {
               onDeleteVehicle={handleDeleteVehicle}
               maintenanceLogs={maintenance}
               spareParts={spareParts}
+              isAdmin={isAdmin}
             />
           )}
 
@@ -396,6 +411,7 @@ export default function App() {
               onAddMaintenance={handleAddMaintenance}
               onUpdateMaintenance={handleUpdateMaintenance}
               onDeleteMaintenance={handleDeleteMaintenance}
+              isAdmin={isAdmin}
             />
           )}
 
@@ -406,6 +422,7 @@ export default function App() {
               onAddPart={handleAddPart}
               onUpdatePart={handleUpdatePart}
               onDeletePart={handleDeletePart}
+              isAdmin={isAdmin}
             />
           )}
 

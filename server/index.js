@@ -8,21 +8,74 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5000;
 
-// In-memory session store (simple token-based auth)
+// In-memory session store (simple token-based auth with TTL support)
 const sessions = new Map();
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours session expiry
 
 app.use(cors());
 app.use(express.json());
 
-// ---------- Auth Middleware ----------
+// Ensure malformed JSON requests return JSON error instead of HTML
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON payload received in request' });
+  }
+  next(err);
+});
+
+// Force application/json for all /api endpoints
+app.use('/api', (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
+
+// ---------- Role Normalization & RBAC Helpers ----------
+function normalizeRole(role) {
+  if (!role) return 'USER';
+  const trimmed = String(role).trim().toUpperCase();
+  if (trimmed === 'ADMIN') return 'ADMIN';
+  return 'USER';
+}
+
+// ---------- Auth & RBAC Middleware ----------
 function requireAuth(req, res, next) {
   const token = req.headers['x-auth-token'];
   if (!token || !sessions.has(token)) {
     return res.status(401).json({ error: 'Authentication required. Please login first.' });
   }
-  req.user = sessions.get(token);
+
+  const session = sessions.get(token);
+  const now = Date.now();
+
+  if (session.expiresAt && now > session.expiresAt) {
+    sessions.delete(token);
+    return res.status(401).json({ error: 'Session expired. Please login again.' });
+  }
+
+  // Update session activity timestamp and slide expiration window
+  session.lastAccessed = now;
+  session.expiresAt = now + SESSION_TTL_MS;
+  req.user = session;
   next();
 }
+
+function requireRole(...allowedRoles) {
+  const normalizedAllowed = allowedRoles.map(r => r.toUpperCase());
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required. Please login first.' });
+    }
+    const currentRole = normalizeRole(req.user.role);
+    if (!normalizedAllowed.includes(currentRole)) {
+      return res.status(403).json({
+        error: `Forbidden: Administrator privileges required. Current role '${currentRole}' is not authorized to perform this operation.`
+      });
+    }
+    next();
+  };
+}
+
+const requireAdmin = requireRole('ADMIN');
 
 // Service scheduling helper
 function computeServiceState(nextServiceDate) {
@@ -70,7 +123,7 @@ async function syncVehicleStatus(regNo) {
 // ---------- Auth Endpoints ----------
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
@@ -82,18 +135,43 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const token = crypto.randomUUID();
-    const userData = { id: user.id, username: user.username, name: user.name, role: user.role };
-    sessions.set(token, userData);
+    const normalizedRole = normalizeRole(user.role);
+    const now = Date.now();
+    const sessionData = {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: normalizedRole,
+      createdAt: now,
+      lastAccessed: now,
+      expiresAt: now + SESSION_TTL_MS
+    };
+    sessions.set(token, sessionData);
 
-    res.json({ success: true, token, user: userData });
+    const publicUserData = {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: normalizedRole
+    };
+
+    return res.status(200).json({ success: true, token, user: publicUserData });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Server error during login' });
+    return res.status(500).json({ error: error.message || 'Server error during login' });
   }
 });
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({ success: true, user: req.user });
+  res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      username: req.user.username,
+      name: req.user.name,
+      role: normalizeRole(req.user.role)
+    }
+  });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -113,7 +191,7 @@ app.get('/api/vehicles', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/vehicles', requireAuth, async (req, res) => {
+app.post('/api/vehicles', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { regNo, type, make, model, year, fuelType, mileage, status, nextServiceDate, purchaseDate, insuranceExpiry } = req.body;
     if (!regNo || !make || !model) {
@@ -155,7 +233,7 @@ app.post('/api/vehicles', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/vehicles/:id', requireAuth, async (req, res) => {
+app.put('/api/vehicles/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { regNo, type, make, model, year, fuelType, mileage, status, nextServiceDate, purchaseDate, insuranceExpiry } = req.body;
@@ -207,7 +285,7 @@ app.put('/api/vehicles/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/vehicles/:id', requireAuth, async (req, res) => {
+app.delete('/api/vehicles/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -234,7 +312,7 @@ app.get('/api/maintenance', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/maintenance', requireAuth, async (req, res) => {
+app.post('/api/maintenance', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { vehicleReg, vehicleName, type, serviceDate, nextServiceDate, mileage, description, cost, status } = req.body;
     if (!vehicleReg || !description) {
@@ -286,7 +364,7 @@ app.post('/api/maintenance', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/maintenance/:id', requireAuth, async (req, res) => {
+app.put('/api/maintenance/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { vehicleName, type, serviceDate, nextServiceDate, mileage, description, cost, status } = req.body;
@@ -330,7 +408,7 @@ app.put('/api/maintenance/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/maintenance/:id', requireAuth, async (req, res) => {
+app.delete('/api/maintenance/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const log = await prisma.maintenanceLog.delete({ where: { id } });
@@ -357,7 +435,7 @@ app.get('/api/spare-parts', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/spare-parts', requireAuth, async (req, res) => {
+app.post('/api/spare-parts', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { partName, vehicleReg, quantity, replacementDate, cost } = req.body;
     if (!partName || !vehicleReg) {
@@ -387,7 +465,7 @@ app.post('/api/spare-parts', requireAuth, async (req, res) => {
   }
 });
 
-app.put('/api/spare-parts/:id', requireAuth, async (req, res) => {
+app.put('/api/spare-parts/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { partName, vehicleReg, quantity, replacementDate, cost } = req.body;
@@ -420,7 +498,7 @@ app.put('/api/spare-parts/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/spare-parts/:id', requireAuth, async (req, res) => {
+app.delete('/api/spare-parts/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const part = await prisma.sparePart.delete({ where: { id } });
@@ -432,6 +510,78 @@ app.delete('/api/spare-parts/:id', requireAuth, async (req, res) => {
     }
     res.status(500).json({ error: 'Failed to delete spare part' });
   }
+});
+
+// ---------- User Management (ADMIN Only) ----------
+app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(users.map(u => ({ ...u, role: normalizeRole(u.role) })));
+  } catch (error) {
+    console.error('Fetch users error:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { username, password, name, role } = req.body || {};
+    if (!username || !password || !name) {
+      return res.status(400).json({ error: 'Username, password, and name are required' });
+    }
+
+    const assignedRole = normalizeRole(role || 'USER');
+
+    const newUser = await prisma.user.create({
+      data: {
+        username,
+        password,
+        name,
+        role: assignedRole
+      },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    res.status(201).json({ ...newUser, role: normalizeRole(newUser.role) });
+  } catch (error) {
+    console.error('Create user error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'A user with this username already exists' });
+    }
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Catch-all for undefined /api routes
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `Endpoint not found: ${req.method} ${req.originalUrl}` });
+});
+
+// Global unhandled error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled server error:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: err.message || 'Internal server error' });
 });
 
 // Start server after ensuring PostgreSQL is running

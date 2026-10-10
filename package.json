@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "prisma:generate": "prisma generate --schema=server/prisma/schema.prisma",
     "prisma:push": "prisma db push --schema=server/prisma/schema.prisma",
-    "db:seed": "node server/seed.js"
+    "db:seed": "node server/seed.js",
+    "test:fullstack": "node server/verify-fullstack.js",
+    "test:rbac": "node server/verify-rbac.js",
+    "test": "node server/verify-fullstack.js && node server/verify-rbac.js"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

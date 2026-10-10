@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { History, Filter, Car, Calendar, Wrench } from 'lucide-react';
 
-export default function HistoryPage({ maintenance, vehicles }) {
+export default function HistoryPage({ maintenance = [], vehicles = [] }) {
   const [selectedVehicleReg, setSelectedVehicleReg] = useState('All');
 
   // Combine and sort chronologically (latest first)

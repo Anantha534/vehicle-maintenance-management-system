@@ -66,7 +66,7 @@ export function getServiceScheduleInfo(vehicle) {
   return {
     isUnderRepair,
     serviceState, // 'Overdue' | 'Due' | 'Upcoming' | 'None'
-    daysDiff,
+    daysDiff: diffDays,
     displayStatus, // 'Under Repair' | 'Service Due' | 'Active'
     badgeClass,
     nextServiceDate: vehicle.nextServiceDate

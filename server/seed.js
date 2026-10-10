@@ -187,12 +187,24 @@ async function main() {
   // Create admin user
   await prisma.user.upsert({
     where: { username: 'admin@fleet.edu' },
-    update: { password: 'demo123' },
+    update: { password: 'demo123', role: 'ADMIN', name: 'System Admin' },
     create: {
       username: 'admin@fleet.edu',
       password: 'demo123',
       name: 'System Admin',
-      role: 'Admin'
+      role: 'ADMIN'
+    }
+  });
+
+  // Create standard user (read-only permissions)
+  await prisma.user.upsert({
+    where: { username: 'user@fleet.edu' },
+    update: { password: 'user123', role: 'USER', name: 'Staff Operator' },
+    create: {
+      username: 'user@fleet.edu',
+      password: 'user123',
+      name: 'Staff Operator',
+      role: 'USER'
     }
   });
 
