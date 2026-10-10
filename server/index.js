@@ -230,14 +230,17 @@ app.get('/api/vehicles', requireAuth, async (req, res) => {
   }
 });
 
-// ---------- Vehicles CRUD ----------
-app.get('/api/vehicles', requireAuth, async (req, res) => {
+app.get('/api/vehicles/:id', requireAuth, async (req, res) => {
   try {
-    const vehicles = await prisma.vehicle.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json(vehicles);
+    const { id } = req.params;
+    const vehicle = await prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found' });
+    }
+    res.json(vehicle);
   } catch (error) {
-    console.error('Fetch vehicles error:', error);
-    res.status(500).json({ error: 'Failed to fetch vehicles' });
+    console.error('Fetch vehicle by ID error:', error);
+    res.status(500).json({ error: 'Failed to fetch vehicle' });
   }
 });
 
@@ -386,6 +389,20 @@ app.get('/api/maintenance', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Fetch maintenance error:', error);
     res.status(500).json({ error: 'Failed to fetch maintenance logs' });
+  }
+});
+
+app.get('/api/maintenance/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const log = await prisma.maintenanceLog.findUnique({ where: { id } });
+    if (!log) {
+      return res.status(404).json({ error: 'Maintenance log not found' });
+    }
+    res.json(log);
+  } catch (error) {
+    console.error('Fetch maintenance by ID error:', error);
+    res.status(500).json({ error: 'Failed to fetch maintenance log' });
   }
 });
 
@@ -543,6 +560,20 @@ app.get('/api/spare-parts', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Fetch spare parts error:', error);
     res.status(500).json({ error: 'Failed to fetch spare parts' });
+  }
+});
+
+app.get('/api/spare-parts/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const part = await prisma.sparePart.findUnique({ where: { id } });
+    if (!part) {
+      return res.status(404).json({ error: 'Spare part not found' });
+    }
+    res.json(part);
+  } catch (error) {
+    console.error('Fetch spare part by ID error:', error);
+    res.status(500).json({ error: 'Failed to fetch spare part' });
   }
 });
 
