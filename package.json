@@ -14,7 +14,8 @@
     "test:fullstack": "node server/verify-fullstack.js",
     "test:rbac": "node server/verify-rbac.js",
     "test:bcrypt": "node server/verify-bcrypt.js",
-    "test": "node server/verify-fullstack.js && node server/verify-rbac.js && node server/verify-bcrypt.js"
+    "test:integrity": "node server/verify-integrity.js",
+    "test": "node server/verify-fullstack.js && node server/verify-rbac.js && node server/verify-bcrypt.js && node server/verify-integrity.js"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

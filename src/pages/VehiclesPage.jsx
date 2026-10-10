@@ -339,6 +339,8 @@ export default function VehiclesPage({
               <label className="block text-xs font-semibold text-gray-700 mb-1">Manufacturing Year</label>
               <input
                 type="number"
+                min="1900"
+                max={new Date().getFullYear() + 2}
                 value={formData.year}
                 onChange={(e) => setFormData({ ...formData, year: e.target.value })}
                 className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
@@ -363,6 +365,7 @@ export default function VehiclesPage({
               <label className="block text-xs font-semibold text-gray-700 mb-1">Current Mileage (km)</label>
               <input
                 type="number"
+                min="0"
                 placeholder="e.g. 25000"
                 value={formData.mileage}
                 onChange={(e) => setFormData({ ...formData, mileage: e.target.value })}
@@ -486,6 +489,8 @@ export default function VehiclesPage({
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Manufacturing Year</label>
                 <input
                   type="number"
+                  min="1900"
+                  max={new Date().getFullYear() + 2}
                   value={editingVehicle.year}
                   onChange={(e) => setEditingVehicle({ ...editingVehicle, year: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
@@ -510,6 +515,7 @@ export default function VehiclesPage({
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Current Mileage (km)</label>
                 <input
                   type="number"
+                  min="0"
                   value={editingVehicle.mileage}
                   onChange={(e) => setEditingVehicle({ ...editingVehicle, mileage: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"

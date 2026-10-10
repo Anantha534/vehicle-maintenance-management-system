@@ -162,6 +162,8 @@ async function safeJson(res) {
       if (res.ok) {
         const updated = await safeJson(res);
         setVehicles(prev => prev.map(v => v.id === id ? updated : v));
+        // Refresh fleet data to sync cascaded registration changes, names, and status across tabs
+        fetchFleetData();
         return { success: true };
       } else {
         const err = await safeJson(res);

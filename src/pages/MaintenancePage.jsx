@@ -286,6 +286,7 @@ export default function MaintenancePage({
               <label className="block text-xs font-semibold text-gray-700 mb-1">Odometer Reading (km)</label>
               <input
                 type="number"
+                min="0"
                 placeholder="e.g. 26500"
                 value={formData.mileage}
                 onChange={(e) => setFormData({ ...formData, mileage: e.target.value })}
@@ -297,6 +298,8 @@ export default function MaintenancePage({
               <label className="block text-xs font-semibold text-gray-700 mb-1">Total Cost (₹) *</label>
               <input
                 type="number"
+                min="0"
+                step="0.01"
                 placeholder="e.g. 3500"
                 value={formData.cost}
                 onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
@@ -400,6 +403,7 @@ export default function MaintenancePage({
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Odometer Reading (km)</label>
                 <input
                   type="number"
+                  min="0"
                   value={editingLog.mileage || ''}
                   onChange={(e) => setEditingLog({ ...editingLog, mileage: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"
@@ -410,6 +414,8 @@ export default function MaintenancePage({
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Total Cost (₹) *</label>
                 <input
                   type="number"
+                  min="0"
+                  step="0.01"
                   value={editingLog.cost || ''}
                   onChange={(e) => setEditingLog({ ...editingLog, cost: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"

@@ -239,6 +239,8 @@ export default function SparePartsPage({
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Total Cost (₹) *</label>
                 <input
                   type="number"
+                  min="0"
+                  step="0.01"
                   placeholder="e.g. 1500"
                   value={formData.cost}
                   onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
@@ -327,6 +329,8 @@ export default function SparePartsPage({
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Total Cost (₹) *</label>
                   <input
                     type="number"
+                    min="0"
+                    step="0.01"
                     value={editingPart.cost}
                     onChange={(e) => setEditingPart({ ...editingPart, cost: e.target.value })}
                     className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-forest-600"

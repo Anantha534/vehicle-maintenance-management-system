@@ -98,25 +98,23 @@ function requireRole(...allowedRoles) {
 
 const requireAdmin = requireRole('ADMIN');
 
-// Service scheduling helper
-function computeServiceState(nextServiceDate) {
-  if (!nextServiceDate) return { state: 'None', daysDiff: null };
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(nextServiceDate);
-  target.setHours(0, 0, 0, 0);
-  const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return { state: 'Overdue', daysDiff: diffDays };
-  if (diffDays <= 7) return { state: 'Due', daysDiff: diffDays };
-  return { state: 'Upcoming', daysDiff: diffDays };
-}
+import {
+  validateVehiclePayload,
+  validateMaintenancePayload,
+  validateSparePartPayload,
+  computeServiceState,
+  isValidDateString
+} from './validation.js';
 
-// Sync vehicle status helper
-async function syncVehicleStatus(regNo) {
-  const vehicle = await prisma.vehicle.findUnique({ where: { regNo } });
+// Service scheduling helper re-exported for convenience
+export { computeServiceState };
+
+// Sync vehicle status helper (supports transactional client tx)
+async function syncVehicleStatus(regNo, tx = prisma) {
+  const vehicle = await tx.vehicle.findUnique({ where: { regNo } });
   if (!vehicle) return;
 
-  const inProgressCount = await prisma.maintenanceLog.count({
+  const inProgressCount = await tx.maintenanceLog.count({
     where: { vehicleReg: regNo, status: 'In Progress' }
   });
 
@@ -134,7 +132,7 @@ async function syncVehicleStatus(regNo) {
   }
 
   if (vehicle.status !== newStatus) {
-    await prisma.vehicle.update({
+    await tx.vehicle.update({
       where: { regNo },
       data: { status: newStatus }
     });
@@ -232,35 +230,45 @@ app.get('/api/vehicles', requireAuth, async (req, res) => {
   }
 });
 
+// ---------- Vehicles CRUD ----------
+app.get('/api/vehicles', requireAuth, async (req, res) => {
+  try {
+    const vehicles = await prisma.vehicle.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(vehicles);
+  } catch (error) {
+    console.error('Fetch vehicles error:', error);
+    res.status(500).json({ error: 'Failed to fetch vehicles' });
+  }
+});
+
 app.post('/api/vehicles', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { regNo, type, make, model, year, fuelType, mileage, status, nextServiceDate, purchaseDate, insuranceExpiry } = req.body;
-    if (!regNo || !make || !model) {
-      return res.status(400).json({ error: 'Registration number, make, and model are required' });
+    const validation = validateVehiclePayload(req.body, { isUpdate: false });
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const data = validation.data;
+
+    // Check duplicate registration proactively
+    const existing = await prisma.vehicle.findUnique({ where: { regNo: data.regNo } });
+    if (existing) {
+      return res.status(400).json({ error: 'Vehicle with this registration number already exists' });
     }
 
-    // Determine initial status based on nextServiceDate if not explicitly Under Repair
-    let initialStatus = status || 'Active';
-    if (initialStatus !== 'Under Repair' && nextServiceDate) {
-      const { state } = computeServiceState(nextServiceDate);
+    let initialStatus = data.status || 'Active';
+    if (initialStatus !== 'Under Repair' && data.nextServiceDate) {
+      const { state } = computeServiceState(data.nextServiceDate);
       if (state === 'Overdue' || state === 'Due') {
         initialStatus = 'Service Due';
+      } else {
+        initialStatus = 'Active';
       }
     }
 
     const vehicle = await prisma.vehicle.create({
       data: {
-        regNo,
-        type: type || 'Car',
-        make,
-        model,
-        year: Number(year) || new Date().getFullYear(),
-        fuelType: fuelType || 'Petrol',
-        mileage: Number(mileage) || 0,
-        status: initialStatus,
-        nextServiceDate: nextServiceDate || null,
-        purchaseDate: purchaseDate || null,
-        insuranceExpiry: insuranceExpiry || null
+        ...data,
+        status: initialStatus
       }
     });
 
@@ -277,48 +285,73 @@ app.post('/api/vehicles', requireAuth, requireAdmin, async (req, res) => {
 app.put('/api/vehicles/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { regNo, type, make, model, year, fuelType, mileage, status, nextServiceDate, purchaseDate, insuranceExpiry } = req.body;
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: 'Valid vehicle ID is required' });
+    }
 
     const existing = await prisma.vehicle.findUnique({ where: { id } });
     if (!existing) {
       return res.status(404).json({ error: 'Vehicle not found' });
     }
 
-    // Check if in progress maintenance exists
-    const inProgressCount = await prisma.maintenanceLog.count({
-      where: { vehicleReg: existing.regNo, status: 'In Progress' }
-    });
+    const validation = validateVehiclePayload(req.body, { isUpdate: true });
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const data = validation.data;
 
-    let resolvedStatus = status !== undefined ? status : existing.status;
-    if (inProgressCount > 0) {
-      resolvedStatus = 'Under Repair';
-    } else if (resolvedStatus !== 'Under Repair' && nextServiceDate !== undefined) {
-      if (nextServiceDate) {
-        const { state } = computeServiceState(nextServiceDate);
-        resolvedStatus = (state === 'Overdue' || state === 'Due') ? 'Service Due' : 'Active';
+    // If updating registration, verify it doesn't collide with another vehicle
+    if (data.regNo && data.regNo !== existing.regNo) {
+      const duplicate = await prisma.vehicle.findUnique({ where: { regNo: data.regNo } });
+      if (duplicate && duplicate.id !== id) {
+        return res.status(400).json({ error: 'Vehicle with this registration number already exists' });
       }
     }
 
-    const vehicle = await prisma.vehicle.update({
-      where: { id },
-      data: {
-        ...(regNo !== undefined && { regNo }),
-        ...(type !== undefined && { type }),
-        ...(make !== undefined && { make }),
-        ...(model !== undefined && { model }),
-        ...(year !== undefined && { year: Number(year) }),
-        ...(fuelType !== undefined && { fuelType }),
-        ...(mileage !== undefined && { mileage: Number(mileage) }),
-        status: resolvedStatus,
-        ...(nextServiceDate !== undefined && { nextServiceDate: nextServiceDate || null }),
-        ...(purchaseDate !== undefined && { purchaseDate: purchaseDate || null }),
-        ...(insuranceExpiry !== undefined && { insuranceExpiry: insuranceExpiry || null })
+    const updatedVehicle = await prisma.$transaction(async (tx) => {
+      const inProgressCount = await tx.maintenanceLog.count({
+        where: { vehicleReg: existing.regNo, status: 'In Progress' }
+      });
+
+      let resolvedStatus = data.status !== undefined ? data.status : existing.status;
+      if (inProgressCount > 0) {
+        resolvedStatus = 'Under Repair';
+      } else if (resolvedStatus !== 'Under Repair') {
+        const targetDate = data.nextServiceDate !== undefined ? data.nextServiceDate : existing.nextServiceDate;
+        if (targetDate) {
+          const { state } = computeServiceState(targetDate);
+          resolvedStatus = (state === 'Overdue' || state === 'Due') ? 'Service Due' : 'Active';
+        } else {
+          resolvedStatus = 'Active';
+        }
       }
+
+      const vehicle = await tx.vehicle.update({
+        where: { id },
+        data: {
+          ...data,
+          status: resolvedStatus
+        }
+      });
+
+      // If make or model updated, sync vehicleName on historical maintenance logs
+      if (data.make !== undefined || data.model !== undefined) {
+        const newName = `${vehicle.make} ${vehicle.model}`;
+        await tx.maintenanceLog.updateMany({
+          where: { vehicleReg: vehicle.regNo },
+          data: { vehicleName: newName }
+        });
+      }
+
+      return vehicle;
     });
 
-    res.json(vehicle);
+    res.json(updatedVehicle);
   } catch (error) {
     console.error('Update vehicle error:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Vehicle with this registration number already exists' });
+    }
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Vehicle not found' });
     }
@@ -329,8 +362,11 @@ app.put('/api/vehicles/:id', requireAuth, requireAdmin, async (req, res) => {
 app.delete('/api/vehicles/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: 'Valid vehicle ID is required' });
+    }
 
-    // Cascading delete handled by Prisma schema relations (onDelete: Cascade)
+    // Cascading delete handled by PostgreSQL relations (onDelete: Cascade)
     const vehicle = await prisma.vehicle.delete({ where: { id } });
     res.json({ success: true, deleted: vehicle });
   } catch (error) {
@@ -355,48 +391,44 @@ app.get('/api/maintenance', requireAuth, async (req, res) => {
 
 app.post('/api/maintenance', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { vehicleReg, vehicleName, type, serviceDate, nextServiceDate, mileage, description, cost, status } = req.body;
-    if (!vehicleReg || !description) {
-      return res.status(400).json({ error: 'Vehicle registration and description are required' });
+    const validation = validateMaintenancePayload(req.body, { isUpdate: false });
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
     }
+    const data = validation.data;
 
-    let resolvedVehicleName = vehicleName;
-    const vehicle = await prisma.vehicle.findUnique({ where: { regNo: vehicleReg } });
-
+    // Verify referenced vehicle exists
+    const vehicle = await prisma.vehicle.findUnique({ where: { regNo: data.vehicleReg } });
     if (!vehicle) {
-      return res.status(400).json({ error: `No vehicle found with registration ${vehicleReg}` });
+      return res.status(400).json({ error: `No vehicle found with registration ${data.vehicleReg}` });
     }
 
-    if (!resolvedVehicleName) {
-      resolvedVehicleName = `${vehicle.make} ${vehicle.model}`;
-    }
+    const resolvedVehicleName = data.vehicleName || `${vehicle.make} ${vehicle.model}`;
 
-    const log = await prisma.maintenanceLog.create({
-      data: {
-        vehicleReg,
-        vehicleName: resolvedVehicleName,
-        type: type || 'Service',
-        serviceDate: serviceDate || new Date().toISOString().split('T')[0],
-        nextServiceDate: nextServiceDate || null,
-        mileage: Number(mileage) || vehicle.mileage,
-        description,
-        cost: Number(cost) || 0,
-        status: status || 'Completed'
-      }
+    const log = await prisma.$transaction(async (tx) => {
+      const newLog = await tx.maintenanceLog.create({
+        data: {
+          ...data,
+          vehicleName: resolvedVehicleName,
+          mileage: data.mileage !== undefined ? data.mileage : vehicle.mileage
+        }
+      });
+
+      // Update vehicle mileage (if maintenance mileage is higher) and nextServiceDate (if provided)
+      const updatedMileage = data.mileage !== undefined ? Math.max(vehicle.mileage, data.mileage) : vehicle.mileage;
+      await tx.vehicle.update({
+        where: { regNo: data.vehicleReg },
+        data: {
+          mileage: updatedMileage,
+          ...(data.nextServiceDate ? { nextServiceDate: data.nextServiceDate } : {})
+        }
+      });
+
+      // Sync vehicle status respecting Under Repair priority
+      await syncVehicleStatus(data.vehicleReg, tx);
+
+      return newLog;
     });
-
-    // Update vehicle mileage and nextServiceDate
-    const updatedMileage = mileage ? Math.max(vehicle.mileage, Number(mileage)) : vehicle.mileage;
-    await prisma.vehicle.update({
-      where: { regNo: vehicleReg },
-      data: {
-        mileage: updatedMileage,
-        ...(nextServiceDate ? { nextServiceDate } : {})
-      }
-    });
-
-    // Sync vehicle status respecting Under Repair priority
-    await syncVehicleStatus(vehicleReg);
 
     res.status(201).json(log);
   } catch (error) {
@@ -408,38 +440,64 @@ app.post('/api/maintenance', requireAuth, requireAdmin, async (req, res) => {
 app.put('/api/maintenance/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { vehicleName, type, serviceDate, nextServiceDate, mileage, description, cost, status } = req.body;
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: 'Valid maintenance log ID is required' });
+    }
 
     const existingLog = await prisma.maintenanceLog.findUnique({ where: { id } });
     if (!existingLog) {
       return res.status(404).json({ error: 'Maintenance log not found' });
     }
 
-    const log = await prisma.maintenanceLog.update({
-      where: { id },
-      data: {
-        ...(vehicleName !== undefined && { vehicleName }),
-        ...(type !== undefined && { type }),
-        ...(serviceDate !== undefined && { serviceDate }),
-        ...(nextServiceDate !== undefined && { nextServiceDate: nextServiceDate || null }),
-        ...(mileage !== undefined && { mileage: Number(mileage) }),
-        ...(description !== undefined && { description }),
-        ...(cost !== undefined && { cost: Number(cost) }),
-        ...(status !== undefined && { status })
-      }
-    });
+    const validation = validateMaintenancePayload(req.body, { isUpdate: true });
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const data = validation.data;
 
-    // If nextServiceDate or status updated, sync with vehicle
-    if (nextServiceDate) {
-      await prisma.vehicle.update({
-        where: { regNo: log.vehicleReg },
-        data: { nextServiceDate }
-      });
+    // If updating vehicleReg, verify that the new vehicle exists
+    const targetReg = data.vehicleReg || existingLog.vehicleReg;
+    if (data.vehicleReg && data.vehicleReg !== existingLog.vehicleReg) {
+      const targetVehicle = await prisma.vehicle.findUnique({ where: { regNo: data.vehicleReg } });
+      if (!targetVehicle) {
+        return res.status(400).json({ error: `No vehicle found with registration ${data.vehicleReg}` });
+      }
     }
 
-    await syncVehicleStatus(log.vehicleReg);
+    const updatedLog = await prisma.$transaction(async (tx) => {
+      const log = await tx.maintenanceLog.update({
+        where: { id },
+        data
+      });
 
-    res.json(log);
+      // If nextServiceDate updated, sync with vehicle
+      if (data.nextServiceDate) {
+        await tx.vehicle.update({
+          where: { regNo: targetReg },
+          data: { nextServiceDate: data.nextServiceDate }
+        });
+      }
+
+      // If mileage updated, update vehicle mileage if log mileage > vehicle mileage
+      if (data.mileage !== undefined) {
+        const v = await tx.vehicle.findUnique({ where: { regNo: targetReg } });
+        if (v && data.mileage > v.mileage) {
+          await tx.vehicle.update({
+            where: { regNo: targetReg },
+            data: { mileage: data.mileage }
+          });
+        }
+      }
+
+      await syncVehicleStatus(targetReg, tx);
+      if (data.vehicleReg && data.vehicleReg !== existingLog.vehicleReg) {
+        await syncVehicleStatus(existingLog.vehicleReg, tx);
+      }
+
+      return log;
+    });
+
+    res.json(updatedLog);
   } catch (error) {
     console.error('Update maintenance error:', error);
     if (error.code === 'P2025') {
@@ -452,9 +510,21 @@ app.put('/api/maintenance/:id', requireAuth, requireAdmin, async (req, res) => {
 app.delete('/api/maintenance/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const log = await prisma.maintenanceLog.delete({ where: { id } });
-    // Sync vehicle status now that this log is removed
-    await syncVehicleStatus(log.vehicleReg);
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: 'Valid maintenance log ID is required' });
+    }
+
+    const existing = await prisma.maintenanceLog.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Maintenance log not found' });
+    }
+
+    const log = await prisma.$transaction(async (tx) => {
+      const deleted = await tx.maintenanceLog.delete({ where: { id } });
+      await syncVehicleStatus(deleted.vehicleReg, tx);
+      return deleted;
+    });
+
     res.json({ success: true, deleted: log });
   } catch (error) {
     console.error('Delete maintenance error:', error);
@@ -478,25 +548,20 @@ app.get('/api/spare-parts', requireAuth, async (req, res) => {
 
 app.post('/api/spare-parts', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { partName, vehicleReg, quantity, replacementDate, cost } = req.body;
-    if (!partName || !vehicleReg) {
-      return res.status(400).json({ error: 'Part name and vehicle registration are required' });
+    const validation = validateSparePartPayload(req.body, { isUpdate: false });
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
     }
+    const data = validation.data;
 
-    // Verify vehicle exists (foreign key check)
-    const vehicle = await prisma.vehicle.findUnique({ where: { regNo: vehicleReg } });
+    // Verify referenced vehicle exists (foreign key check)
+    const vehicle = await prisma.vehicle.findUnique({ where: { regNo: data.vehicleReg } });
     if (!vehicle) {
-      return res.status(400).json({ error: `No vehicle found with registration ${vehicleReg}` });
+      return res.status(400).json({ error: `No vehicle found with registration ${data.vehicleReg}` });
     }
 
     const part = await prisma.sparePart.create({
-      data: {
-        partName,
-        vehicleReg,
-        quantity: Number(quantity) || 1,
-        replacementDate: replacementDate || new Date().toISOString().split('T')[0],
-        cost: Number(cost) || 0
-      }
+      data
     });
 
     res.status(201).json(part);
@@ -509,24 +574,31 @@ app.post('/api/spare-parts', requireAuth, requireAdmin, async (req, res) => {
 app.put('/api/spare-parts/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { partName, vehicleReg, quantity, replacementDate, cost } = req.body;
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: 'Valid spare part ID is required' });
+    }
 
-    if (vehicleReg !== undefined) {
-      const vehicle = await prisma.vehicle.findUnique({ where: { regNo: vehicleReg } });
+    const existing = await prisma.sparePart.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Spare part not found' });
+    }
+
+    const validation = validateSparePartPayload(req.body, { isUpdate: true });
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    const data = validation.data;
+
+    if (data.vehicleReg && data.vehicleReg !== existing.vehicleReg) {
+      const vehicle = await prisma.vehicle.findUnique({ where: { regNo: data.vehicleReg } });
       if (!vehicle) {
-        return res.status(400).json({ error: `No vehicle found with registration ${vehicleReg}` });
+        return res.status(400).json({ error: `No vehicle found with registration ${data.vehicleReg}` });
       }
     }
 
     const part = await prisma.sparePart.update({
       where: { id },
-      data: {
-        ...(partName !== undefined && { partName }),
-        ...(vehicleReg !== undefined && { vehicleReg }),
-        ...(quantity !== undefined && { quantity: Number(quantity) }),
-        ...(replacementDate !== undefined && { replacementDate }),
-        ...(cost !== undefined && { cost: Number(cost) })
-      }
+      data
     });
 
     res.json(part);
@@ -542,6 +614,10 @@ app.put('/api/spare-parts/:id', requireAuth, requireAdmin, async (req, res) => {
 app.delete('/api/spare-parts/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: 'Valid spare part ID is required' });
+    }
+
     const part = await prisma.sparePart.delete({ where: { id } });
     res.json({ success: true, deleted: part });
   } catch (error) {
@@ -577,25 +653,31 @@ app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
 app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { username, password, name, role } = req.body || {};
-    if (!username || !password || !name) {
-      return res.status(400).json({ error: 'Username, password, and name are required' });
+    if (!username || typeof username !== 'string' || username.trim() === '') {
+      return res.status(400).json({ error: 'Username is required and cannot be empty' });
     }
-    if (typeof password !== 'string' || password.length < 8) {
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return res.status(400).json({ error: 'Name is required and cannot be empty' });
+    }
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+    if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long' });
     }
     if (password.length > 128) {
       return res.status(400).json({ error: 'Password must not exceed 128 characters' });
     }
 
-    // Always store new accounts with a hashed password; role defaults to USER regardless of submitted value
+    // Always store new accounts with a hashed password; role defaults to USER
     const assignedRole = normalizeRole(role || 'USER');
     const hashedPassword = await hashPassword(password);
 
     const newUser = await prisma.user.create({
       data: {
-        username,
+        username: username.trim(),
         password: hashedPassword,
-        name,
+        name: name.trim(),
         role: assignedRole
       },
       select: {
@@ -623,14 +705,15 @@ app.all('/api/*', (req, res) => {
   res.status(404).json({ error: `Endpoint not found: ${req.method} ${req.originalUrl}` });
 });
 
-// Global unhandled error handler
+// Global unhandled error handler (prevents leaking stack traces or internal database errors)
 app.use((err, req, res, next) => {
   console.error('Unhandled server error:', err);
   if (res.headersSent) {
     return next(err);
   }
   const status = err.status || err.statusCode || 500;
-  res.status(status).json({ error: err.message || 'Internal server error' });
+  const safeMessage = status === 500 ? 'Internal server error' : (err.message || 'An error occurred');
+  res.status(status).json({ error: safeMessage });
 });
 
 // Start server after ensuring PostgreSQL is running
