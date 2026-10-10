@@ -13,11 +13,13 @@
     "db:seed": "node server/seed.js",
     "test:fullstack": "node server/verify-fullstack.js",
     "test:rbac": "node server/verify-rbac.js",
-    "test": "node server/verify-fullstack.js && node server/verify-rbac.js"
+    "test:bcrypt": "node server/verify-bcrypt.js",
+    "test": "node server/verify-fullstack.js && node server/verify-rbac.js && node server/verify-bcrypt.js"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@prisma/client": "^5.11.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "embedded-postgres": "^18.4.0-beta.17",
     "express": "^4.19.2",

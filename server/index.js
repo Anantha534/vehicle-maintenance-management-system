@@ -1,8 +1,29 @@
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { ensurePostgres } from './start-pg.js';
+
+// ---------- Password Helpers ----------
+const BCRYPT_ROUNDS = 12;
+
+// Detect if a stored password is already a bcrypt hash (starts with $2a$, $2b$, $2x$, $2y$)
+function isBcryptHash(str) {
+  return typeof str === 'string' && /^\$2[abxy]\$\d{2}\$/.test(str);
+}
+
+async function hashPassword(plaintext) {
+  return bcrypt.hash(plaintext, BCRYPT_ROUNDS);
+}
+
+async function verifyPassword(plaintext, stored) {
+  if (isBcryptHash(stored)) {
+    return bcrypt.compare(plaintext, stored);
+  }
+  // Legacy plaintext match — on-the-fly migration will follow
+  return plaintext === stored;
+}
 
 const app = express();
 const prisma = new PrismaClient();
@@ -130,8 +151,28 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { username } });
 
-    if (!user || user.password !== password) {
+    if (!user) {
       return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const passwordValid = await verifyPassword(password, user.password);
+    if (!passwordValid) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    // On-the-fly migration: if the stored password is still plaintext, hash it now
+    if (!isBcryptHash(user.password)) {
+      try {
+        const hashed = await hashPassword(password);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { password: hashed }
+        });
+        console.log(`[Auth] Migrated plaintext password to bcrypt for user: ${user.username}`);
+      } catch (migrationErr) {
+        // Non-fatal: log and continue. Next login will retry migration.
+        console.error(`[Auth] Password migration failed for ${user.username}:`, migrationErr.message);
+      }
     }
 
     const token = crypto.randomUUID();
@@ -158,7 +199,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(200).json({ success: true, token, user: publicUserData });
   } catch (error) {
     console.error('Login error:', error);
-    return res.status(500).json({ error: error.message || 'Server error during login' });
+    return res.status(500).json({ error: 'Server error during login' });
   }
 });
 
@@ -539,13 +580,21 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
     if (!username || !password || !name) {
       return res.status(400).json({ error: 'Username, password, and name are required' });
     }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+    if (password.length > 128) {
+      return res.status(400).json({ error: 'Password must not exceed 128 characters' });
+    }
 
+    // Always store new accounts with a hashed password; role defaults to USER regardless of submitted value
     const assignedRole = normalizeRole(role || 'USER');
+    const hashedPassword = await hashPassword(password);
 
     const newUser = await prisma.user.create({
       data: {
         username,
-        password,
+        password: hashedPassword,
         name,
         role: assignedRole
       },

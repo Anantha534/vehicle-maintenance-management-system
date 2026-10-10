@@ -1,6 +1,9 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
+const BCRYPT_ROUNDS = 12;
+
 
 const initialVehicles = [
   {
@@ -184,25 +187,40 @@ const initialSpareParts = [
 async function main() {
   console.log('Seeding database...');
 
-  // Create admin user
+  // Hash demo passwords (idempotent — only written to DB during seed)
+  const adminHash = await bcrypt.hash('demo123', BCRYPT_ROUNDS);
+  const userHash  = await bcrypt.hash('user123', BCRYPT_ROUNDS);
+
+  // Create admin user — only update password if still plaintext (no $2 prefix)
+  const existingAdmin = await prisma.user.findUnique({ where: { username: 'admin@fleet.edu' } });
   await prisma.user.upsert({
     where: { username: 'admin@fleet.edu' },
-    update: { password: 'demo123', role: 'ADMIN', name: 'System Admin' },
+    update: {
+      role: 'ADMIN',
+      name: 'System Admin',
+      // Only overwrite password when not already a bcrypt hash
+      ...(existingAdmin && /^\$2[abxy]\$/.test(existingAdmin.password) ? {} : { password: adminHash })
+    },
     create: {
       username: 'admin@fleet.edu',
-      password: 'demo123',
+      password: adminHash,
       name: 'System Admin',
       role: 'ADMIN'
     }
   });
 
-  // Create standard user (read-only permissions)
+  // Create standard user
+  const existingUser = await prisma.user.findUnique({ where: { username: 'user@fleet.edu' } });
   await prisma.user.upsert({
     where: { username: 'user@fleet.edu' },
-    update: { password: 'user123', role: 'USER', name: 'Staff Operator' },
+    update: {
+      role: 'USER',
+      name: 'Staff Operator',
+      ...(existingUser && /^\$2[abxy]\$/.test(existingUser.password) ? {} : { password: userHash })
+    },
     create: {
       username: 'user@fleet.edu',
-      password: 'user123',
+      password: userHash,
       name: 'Staff Operator',
       role: 'USER'
     }
