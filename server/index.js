@@ -2,8 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { PrismaClient } from '@prisma/client';
-import { ensurePostgres } from './start-pg.js';
+
 
 // ---------- Password Helpers ----------
 const BCRYPT_ROUNDS = 12;
