@@ -192,6 +192,8 @@ export async function ensureDatabase(prisma) {
         await prisma.user.findFirst();
       } catch (err) {
         console.log('[DB Auto-Init] User table not found, creating schema tables...');
+        // Each statement must be a separate call — PostgreSQL forbids multiple
+        // commands in a single prepared statement (error 42601).
         await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS "User" (
             "id" TEXT NOT NULL,
@@ -202,7 +204,9 @@ export async function ensureDatabase(prisma) {
             "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT "User_pkey" PRIMARY KEY ("id")
-          );
+          )
+        `);
+        await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS "Vehicle" (
             "id" TEXT NOT NULL,
             "regNo" TEXT NOT NULL,
@@ -219,7 +223,9 @@ export async function ensureDatabase(prisma) {
             "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT "Vehicle_pkey" PRIMARY KEY ("id")
-          );
+          )
+        `);
+        await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS "MaintenanceLog" (
             "id" TEXT NOT NULL,
             "vehicleReg" TEXT NOT NULL,
@@ -234,7 +240,9 @@ export async function ensureDatabase(prisma) {
             "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT "MaintenanceLog_pkey" PRIMARY KEY ("id")
-          );
+          )
+        `);
+        await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS "SparePart" (
             "id" TEXT NOT NULL,
             "partName" TEXT NOT NULL,
@@ -245,7 +253,9 @@ export async function ensureDatabase(prisma) {
             "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT "SparePart_pkey" PRIMARY KEY ("id")
-          );
+          )
+        `);
+        await prisma.$executeRawUnsafe(`
           CREATE TABLE IF NOT EXISTS "Session" (
             "id" TEXT NOT NULL,
             "token" TEXT NOT NULL,
@@ -255,11 +265,11 @@ export async function ensureDatabase(prisma) {
             "role" TEXT NOT NULL,
             "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
-          );
-          CREATE UNIQUE INDEX IF NOT EXISTS "User_username_key" ON "User"("username");
-          CREATE UNIQUE INDEX IF NOT EXISTS "Vehicle_regNo_key" ON "Vehicle"("regNo");
-          CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token");
+          )
         `);
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "User_username_key" ON "User"("username")`);
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Vehicle_regNo_key" ON "Vehicle"("regNo")`);
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token")`);
 
         try {
           await prisma.$executeRawUnsafe(`
