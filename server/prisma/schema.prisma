@@ -65,3 +65,14 @@ model SparePart {
 
   vehicle Vehicle @relation(fields: [vehicleReg], references: [regNo], onDelete: Cascade, onUpdate: Cascade)
 }
+
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  username  String
+  name      String
+  role      String
+  createdAt DateTime @default(now())
+}
+

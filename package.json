@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently \"node server/index.js\" \"vite\"",
     "server": "node server/index.js",
-    "build": "vite build",
+    "build": "prisma generate --schema=server/prisma/schema.prisma && vite build",
+    "postinstall": "prisma generate --schema=server/prisma/schema.prisma",
     "preview": "vite preview",
     "prisma:generate": "prisma generate --schema=server/prisma/schema.prisma",
     "prisma:push": "prisma db push --schema=server/prisma/schema.prisma",
@@ -19,23 +20,23 @@
     "test": "node server/verify-fullstack.js && node server/verify-rbac.js && node server/verify-bcrypt.js && node server/verify-integrity.js && node server/verify-e2e.js"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.8",
     "@prisma/client": "^5.11.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
-    "embedded-postgres": "^18.4.0-beta.17",
     "express": "^4.19.2",
     "lucide-react": "^0.344.0",
-    "pg-mem": "^3.0.14",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "pg-mem": "^3.0.14",
     "postcss": "^8.4.38",
     "prisma": "^5.11.0",
     "tailwindcss": "^3.4.1",
