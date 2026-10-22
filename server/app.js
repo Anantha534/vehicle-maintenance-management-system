@@ -3,6 +3,8 @@ import cors from 'cors';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
+import { ensureDatabase } from './ensure-db.js';
+
 
 // ---------- Password Helpers ----------
 const BCRYPT_ROUNDS = 12;
@@ -48,6 +50,40 @@ app.use('/api', (req, res, next) => {
   res.setHeader('Content-Type', 'application/json');
   next();
 });
+
+// Auto-initialize schema tables and admin account on API access
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    try {
+      await ensureDatabase(prisma);
+    } catch (err) {
+      console.error('[DB Auto-Init Middleware] Error:', err.message);
+    }
+  }
+  next();
+});
+
+// Diagnostic health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    await ensureDatabase(prisma);
+    const userCount = await prisma.user.count();
+    const vehicleCount = await prisma.vehicle.count();
+    res.json({
+      status: 'ok',
+      database: 'connected',
+      users: userCount,
+      vehicles: vehicleCount
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      database: 'failed',
+      error: err.message
+    });
+  }
+});
+
 
 // ---------- Role Normalization & RBAC Helpers ----------
 function normalizeRole(role) {
@@ -161,6 +197,7 @@ async function syncVehicleStatus(regNo, tx = prisma) {
 // ---------- Auth Endpoints ----------
 app.post('/api/auth/login', async (req, res) => {
   try {
+    await ensureDatabase(prisma);
     const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
@@ -231,7 +268,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(200).json({ success: true, token, user: publicUserData });
   } catch (error) {
     console.error('Login error:', error);
-    return res.status(500).json({ error: 'Server error during login' });
+    return res.status(500).json({ error: 'Server error during login', message: error.message });
   }
 });
 
